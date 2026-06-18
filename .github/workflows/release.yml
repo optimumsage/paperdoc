@@ -1,0 +1,84 @@
+name: Release
+
+# Build all desktop/mobile packages and publish a GitHub Release whenever a
+# version tag (e.g. v0.1.0) is pushed.
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter pub get
+      - run: flutter build apk --release
+      - run: mv build/app/outputs/flutter-apk/app-release.apk paperdoc-${{ github.ref_name }}-android.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: android
+          path: paperdoc-*-android.apk
+
+  macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-macos-desktop
+      - run: flutter pub get
+      - run: flutter build macos --release
+      - run: ditto -c -k --keepParent "build/macos/Build/Products/Release/paperdoc.app" "paperdoc-${{ github.ref_name }}-macos.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos
+          path: paperdoc-*-macos.zip
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+      - run: flutter config --enable-windows-desktop
+      - run: flutter pub get
+      - run: flutter build windows --release
+      - run: Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath paperdoc-${{ github.ref_name }}-windows.zip
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: paperdoc-*-windows.zip
+
+  release:
+    needs: [android, macos, windows]
+    # Publish even if one platform build fails — attach whatever succeeded.
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: false
+          prerelease: false
+          generate_release_notes: true
+          fail_on_unmatched_files: false
+          files: |
+            artifacts/android/*.apk
+            artifacts/macos/*.zip
+            artifacts/windows/*.zip
