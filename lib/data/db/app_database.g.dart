@@ -2630,6 +2630,18 @@ class $DocumentsTable extends Documents
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _downloadStateMeta = const VerificationMeta(
+    'downloadState',
+  );
+  @override
+  late final GeneratedColumn<String> downloadState = GeneratedColumn<String>(
+    'download_state',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('local'),
+  );
   static const VerificationMeta _importedAtMeta = const VerificationMeta(
     'importedAt',
   );
@@ -2685,6 +2697,7 @@ class $DocumentsTable extends Documents
     isEncrypted,
     ocrStatus,
     starred,
+    downloadState,
     importedAt,
     fileMtime,
     deletedAt,
@@ -2844,6 +2857,15 @@ class $DocumentsTable extends Documents
         starred.isAcceptableOrUnknown(data['starred']!, _starredMeta),
       );
     }
+    if (data.containsKey('download_state')) {
+      context.handle(
+        _downloadStateMeta,
+        downloadState.isAcceptableOrUnknown(
+          data['download_state']!,
+          _downloadStateMeta,
+        ),
+      );
+    }
     if (data.containsKey('imported_at')) {
       context.handle(
         _importedAtMeta,
@@ -2953,6 +2975,10 @@ class $DocumentsTable extends Documents
         DriftSqlType.bool,
         data['${effectivePrefix}starred'],
       )!,
+      downloadState: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}download_state'],
+      )!,
       importedAt: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}imported_at'],
@@ -3005,6 +3031,12 @@ class Document extends DataClass implements Insertable<Document> {
   /// none | pending | running | done | failed | not_needed
   final String ocrStatus;
   final bool starred;
+
+  /// On-demand availability (OneDrive/Drive-style). `local` = the blob is on
+  /// disk and openable; `cloud` = a placeholder pulled in by sync, blob not yet
+  /// downloaded; `downloading` = a fetch is in flight. Documents imported on
+  /// this device default to `local`; only sync's download path creates `cloud`.
+  final String downloadState;
   final int importedAt;
   final int? fileMtime;
   final int? deletedAt;
@@ -3029,6 +3061,7 @@ class Document extends DataClass implements Insertable<Document> {
     required this.isEncrypted,
     required this.ocrStatus,
     required this.starred,
+    required this.downloadState,
     required this.importedAt,
     this.fileMtime,
     this.deletedAt,
@@ -3066,6 +3099,7 @@ class Document extends DataClass implements Insertable<Document> {
     map['is_encrypted'] = Variable<bool>(isEncrypted);
     map['ocr_status'] = Variable<String>(ocrStatus);
     map['starred'] = Variable<bool>(starred);
+    map['download_state'] = Variable<String>(downloadState);
     map['imported_at'] = Variable<int>(importedAt);
     if (!nullToAbsent || fileMtime != null) {
       map['file_mtime'] = Variable<int>(fileMtime);
@@ -3104,6 +3138,7 @@ class Document extends DataClass implements Insertable<Document> {
       isEncrypted: Value(isEncrypted),
       ocrStatus: Value(ocrStatus),
       starred: Value(starred),
+      downloadState: Value(downloadState),
       importedAt: Value(importedAt),
       fileMtime: fileMtime == null && nullToAbsent
           ? const Value.absent()
@@ -3140,6 +3175,7 @@ class Document extends DataClass implements Insertable<Document> {
       isEncrypted: serializer.fromJson<bool>(json['isEncrypted']),
       ocrStatus: serializer.fromJson<String>(json['ocrStatus']),
       starred: serializer.fromJson<bool>(json['starred']),
+      downloadState: serializer.fromJson<String>(json['downloadState']),
       importedAt: serializer.fromJson<int>(json['importedAt']),
       fileMtime: serializer.fromJson<int?>(json['fileMtime']),
       deletedAt: serializer.fromJson<int?>(json['deletedAt']),
@@ -3169,6 +3205,7 @@ class Document extends DataClass implements Insertable<Document> {
       'isEncrypted': serializer.toJson<bool>(isEncrypted),
       'ocrStatus': serializer.toJson<String>(ocrStatus),
       'starred': serializer.toJson<bool>(starred),
+      'downloadState': serializer.toJson<String>(downloadState),
       'importedAt': serializer.toJson<int>(importedAt),
       'fileMtime': serializer.toJson<int?>(fileMtime),
       'deletedAt': serializer.toJson<int?>(deletedAt),
@@ -3196,6 +3233,7 @@ class Document extends DataClass implements Insertable<Document> {
     bool? isEncrypted,
     String? ocrStatus,
     bool? starred,
+    String? downloadState,
     int? importedAt,
     Value<int?> fileMtime = const Value.absent(),
     Value<int?> deletedAt = const Value.absent(),
@@ -3220,6 +3258,7 @@ class Document extends DataClass implements Insertable<Document> {
     isEncrypted: isEncrypted ?? this.isEncrypted,
     ocrStatus: ocrStatus ?? this.ocrStatus,
     starred: starred ?? this.starred,
+    downloadState: downloadState ?? this.downloadState,
     importedAt: importedAt ?? this.importedAt,
     fileMtime: fileMtime.present ? fileMtime.value : this.fileMtime,
     deletedAt: deletedAt.present ? deletedAt.value : this.deletedAt,
@@ -3254,6 +3293,9 @@ class Document extends DataClass implements Insertable<Document> {
           : this.isEncrypted,
       ocrStatus: data.ocrStatus.present ? data.ocrStatus.value : this.ocrStatus,
       starred: data.starred.present ? data.starred.value : this.starred,
+      downloadState: data.downloadState.present
+          ? data.downloadState.value
+          : this.downloadState,
       importedAt: data.importedAt.present
           ? data.importedAt.value
           : this.importedAt,
@@ -3285,6 +3327,7 @@ class Document extends DataClass implements Insertable<Document> {
           ..write('isEncrypted: $isEncrypted, ')
           ..write('ocrStatus: $ocrStatus, ')
           ..write('starred: $starred, ')
+          ..write('downloadState: $downloadState, ')
           ..write('importedAt: $importedAt, ')
           ..write('fileMtime: $fileMtime, ')
           ..write('deletedAt: $deletedAt')
@@ -3314,6 +3357,7 @@ class Document extends DataClass implements Insertable<Document> {
     isEncrypted,
     ocrStatus,
     starred,
+    downloadState,
     importedAt,
     fileMtime,
     deletedAt,
@@ -3342,6 +3386,7 @@ class Document extends DataClass implements Insertable<Document> {
           other.isEncrypted == this.isEncrypted &&
           other.ocrStatus == this.ocrStatus &&
           other.starred == this.starred &&
+          other.downloadState == this.downloadState &&
           other.importedAt == this.importedAt &&
           other.fileMtime == this.fileMtime &&
           other.deletedAt == this.deletedAt);
@@ -3368,6 +3413,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
   final Value<bool> isEncrypted;
   final Value<String> ocrStatus;
   final Value<bool> starred;
+  final Value<String> downloadState;
   final Value<int> importedAt;
   final Value<int?> fileMtime;
   final Value<int?> deletedAt;
@@ -3392,6 +3438,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     this.isEncrypted = const Value.absent(),
     this.ocrStatus = const Value.absent(),
     this.starred = const Value.absent(),
+    this.downloadState = const Value.absent(),
     this.importedAt = const Value.absent(),
     this.fileMtime = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3417,6 +3464,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     this.isEncrypted = const Value.absent(),
     this.ocrStatus = const Value.absent(),
     this.starred = const Value.absent(),
+    this.downloadState = const Value.absent(),
     required int importedAt,
     this.fileMtime = const Value.absent(),
     this.deletedAt = const Value.absent(),
@@ -3449,6 +3497,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     Expression<bool>? isEncrypted,
     Expression<String>? ocrStatus,
     Expression<bool>? starred,
+    Expression<String>? downloadState,
     Expression<int>? importedAt,
     Expression<int>? fileMtime,
     Expression<int>? deletedAt,
@@ -3474,6 +3523,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
       if (isEncrypted != null) 'is_encrypted': isEncrypted,
       if (ocrStatus != null) 'ocr_status': ocrStatus,
       if (starred != null) 'starred': starred,
+      if (downloadState != null) 'download_state': downloadState,
       if (importedAt != null) 'imported_at': importedAt,
       if (fileMtime != null) 'file_mtime': fileMtime,
       if (deletedAt != null) 'deleted_at': deletedAt,
@@ -3501,6 +3551,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     Value<bool>? isEncrypted,
     Value<String>? ocrStatus,
     Value<bool>? starred,
+    Value<String>? downloadState,
     Value<int>? importedAt,
     Value<int?>? fileMtime,
     Value<int?>? deletedAt,
@@ -3526,6 +3577,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
       isEncrypted: isEncrypted ?? this.isEncrypted,
       ocrStatus: ocrStatus ?? this.ocrStatus,
       starred: starred ?? this.starred,
+      downloadState: downloadState ?? this.downloadState,
       importedAt: importedAt ?? this.importedAt,
       fileMtime: fileMtime ?? this.fileMtime,
       deletedAt: deletedAt ?? this.deletedAt,
@@ -3595,6 +3647,9 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
     if (starred.present) {
       map['starred'] = Variable<bool>(starred.value);
     }
+    if (downloadState.present) {
+      map['download_state'] = Variable<String>(downloadState.value);
+    }
     if (importedAt.present) {
       map['imported_at'] = Variable<int>(importedAt.value);
     }
@@ -3630,6 +3685,7 @@ class DocumentsCompanion extends UpdateCompanion<Document> {
           ..write('isEncrypted: $isEncrypted, ')
           ..write('ocrStatus: $ocrStatus, ')
           ..write('starred: $starred, ')
+          ..write('downloadState: $downloadState, ')
           ..write('importedAt: $importedAt, ')
           ..write('fileMtime: $fileMtime, ')
           ..write('deletedAt: $deletedAt')
@@ -9696,6 +9752,7 @@ typedef $$DocumentsTableCreateCompanionBuilder =
       Value<bool> isEncrypted,
       Value<String> ocrStatus,
       Value<bool> starred,
+      Value<String> downloadState,
       required int importedAt,
       Value<int?> fileMtime,
       Value<int?> deletedAt,
@@ -9722,6 +9779,7 @@ typedef $$DocumentsTableUpdateCompanionBuilder =
       Value<bool> isEncrypted,
       Value<String> ocrStatus,
       Value<bool> starred,
+      Value<String> downloadState,
       Value<int> importedAt,
       Value<int?> fileMtime,
       Value<int?> deletedAt,
@@ -9833,6 +9891,11 @@ class $$DocumentsTableFilterComposer
 
   ColumnFilters<bool> get starred => $composableBuilder(
     column: $table.starred,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get downloadState => $composableBuilder(
+    column: $table.downloadState,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -9961,6 +10024,11 @@ class $$DocumentsTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<String> get downloadState => $composableBuilder(
+    column: $table.downloadState,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
     builder: (column) => ColumnOrderings(column),
@@ -10054,6 +10122,11 @@ class $$DocumentsTableAnnotationComposer
   GeneratedColumn<bool> get starred =>
       $composableBuilder(column: $table.starred, builder: (column) => column);
 
+  GeneratedColumn<String> get downloadState => $composableBuilder(
+    column: $table.downloadState,
+    builder: (column) => column,
+  );
+
   GeneratedColumn<int> get importedAt => $composableBuilder(
     column: $table.importedAt,
     builder: (column) => column,
@@ -10114,6 +10187,7 @@ class $$DocumentsTableTableManager
                 Value<bool> isEncrypted = const Value.absent(),
                 Value<String> ocrStatus = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<String> downloadState = const Value.absent(),
                 Value<int> importedAt = const Value.absent(),
                 Value<int?> fileMtime = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
@@ -10138,6 +10212,7 @@ class $$DocumentsTableTableManager
                 isEncrypted: isEncrypted,
                 ocrStatus: ocrStatus,
                 starred: starred,
+                downloadState: downloadState,
                 importedAt: importedAt,
                 fileMtime: fileMtime,
                 deletedAt: deletedAt,
@@ -10164,6 +10239,7 @@ class $$DocumentsTableTableManager
                 Value<bool> isEncrypted = const Value.absent(),
                 Value<String> ocrStatus = const Value.absent(),
                 Value<bool> starred = const Value.absent(),
+                Value<String> downloadState = const Value.absent(),
                 required int importedAt,
                 Value<int?> fileMtime = const Value.absent(),
                 Value<int?> deletedAt = const Value.absent(),
@@ -10188,6 +10264,7 @@ class $$DocumentsTableTableManager
                 isEncrypted: isEncrypted,
                 ocrStatus: ocrStatus,
                 starred: starred,
+                downloadState: downloadState,
                 importedAt: importedAt,
                 fileMtime: fileMtime,
                 deletedAt: deletedAt,

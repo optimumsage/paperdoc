@@ -5,6 +5,7 @@ import '../../data/repositories/document_repository.dart';
 import '../../data/repositories/providers.dart';
 import '../security/library_lock_controller.dart';
 import '../security/lock_screen.dart';
+import '../sync/sync_controller.dart';
 import '../watch/watch_inbox.dart';
 import 'import_actions.dart';
 import 'library_controller.dart';
@@ -135,6 +136,20 @@ class _LibraryBrowser extends ConsumerWidget {
     final viewMode = ref.watch(documentViewModeProvider);
     final scanner = ref.watch(docScannerProvider);
     final selectionCount = ref.watch(selectionProvider).length;
+    final syncState = ref.watch(syncControllerProvider);
+
+    // Surface sync results/errors from anywhere the sync button is used, so the
+    // feedback isn't trapped inside the Settings page.
+    ref.listen(syncControllerProvider, (prev, next) {
+      final messenger = ScaffoldMessenger.of(context);
+      if (next.error != null && next.error != prev?.error) {
+        messenger.showSnackBar(SnackBar(content: Text(next.error!)));
+      } else if (!next.busy &&
+          next.lastReport != null &&
+          next.lastReport != prev?.lastReport) {
+        messenger.showSnackBar(SnackBar(content: Text(next.lastReport!)));
+      }
+    });
 
     return Scaffold(
       floatingActionButton: scanner.isSupported && selectionCount == 0
@@ -159,6 +174,32 @@ class _LibraryBrowser extends ConsumerWidget {
               ),
         title: const Text('Library'),
         actions: [
+          IconButton(
+            tooltip: syncState.busy
+                ? 'Syncing…'
+                : (syncState.connected ? 'Sync now' : 'Set up sync'),
+            onPressed: syncState.busy
+                ? null
+                : () {
+                    if (syncState.connected) {
+                      ref.read(syncControllerProvider.notifier).syncNow();
+                    } else {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                        const SnackBar(
+                          content:
+                              Text('Set up Google Drive sync in Settings.'),
+                        ),
+                      );
+                    }
+                  },
+            icon: syncState.busy
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : const Icon(Icons.sync),
+          ),
           Builder(
             builder: (context) {
               final count = ref.watch(pendingSuggestionsProvider).asData?.value

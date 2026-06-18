@@ -118,6 +118,9 @@ void main() {
           ..where((t) => t.uid.equals(docA.uid)))
         .getSingle();
     expect(docB.isEncrypted, isTrue);
+    // On-demand: arrives as a cloud placeholder; fetch the ciphertext blob.
+    expect(docB.downloadState, 'cloud');
+    await engineB.downloadBlob(accB, docB);
 
     final cipher = await libB.blobFile(docB.relPath).readAsBytes();
     final plain = await encB.decrypt(cipher);

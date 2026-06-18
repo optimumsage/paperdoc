@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paperdoc/core/clock.dart';
@@ -178,5 +179,33 @@ void main() {
 
     await repo.rename(doc.uid, 'New Title');
     expect((await repo.watchByUid(doc.uid).first)!.title, 'New Title');
+  });
+
+  test('imported documents are local by default', () async {
+    final src = await makeSource('f.pdf', 'data');
+    final doc = await repo.importFile(src.path);
+    expect(doc.downloadState, 'local');
+  });
+
+  test('freeUpSpace requires a remote backup', () async {
+    final src = await makeSource('g.pdf', 'data');
+    final doc = await repo.importFile(src.path);
+
+    // Not backed up to any cloud → must not delete the only copy.
+    expect(await repo.freeUpSpace(doc.uid), isFalse);
+    expect(library.blobFile(doc.relPath).existsSync(), isTrue);
+    expect((await repo.findByUid(doc.uid))!.downloadState, 'local');
+
+    // Record a remote copy, then free space → blob removed, becomes cloud-only.
+    final accId = await db.into(db.syncAccounts).insert(
+        SyncAccountsCompanion.insert(provider: 'fake', accountId: 'me'));
+    await db.into(db.syncState).insert(SyncStateCompanion.insert(
+        accountId: accId,
+        relPath: doc.relPath,
+        remoteId: const Value('remote-1')));
+
+    expect(await repo.freeUpSpace(doc.uid), isTrue);
+    expect(library.blobFile(doc.relPath).existsSync(), isFalse);
+    expect((await repo.findByUid(doc.uid))!.downloadState, 'cloud');
   });
 }

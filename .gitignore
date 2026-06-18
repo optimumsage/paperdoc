@@ -4,6 +4,11 @@
 *.pyc
 *.swp
 .DS_Store
+
+# Android signing — never commit keystores or signing credentials.
+*.jks
+*.keystore
+key.properties
 .atom/
 .build/
 .buildlog/

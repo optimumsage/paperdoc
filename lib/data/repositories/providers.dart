@@ -1,4 +1,5 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 import '../../di/locator.dart';
 import '../../services/library/library_service.dart';
@@ -128,6 +129,10 @@ final secretStoreProvider = Provider<SecretStore>(
 );
 
 final updateServiceProvider = Provider<UpdateService>((ref) => UpdateService());
+
+/// The running app's package metadata (version + build number), for display.
+final packageInfoProvider =
+    FutureProvider<PackageInfo>((ref) => PackageInfo.fromPlatform());
 
 final googleOAuthProvider = Provider<GoogleOAuth>((ref) => GoogleOAuth());
 

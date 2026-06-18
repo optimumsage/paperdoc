@@ -28,8 +28,19 @@ class _WatchInbox extends ConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text('Suggested files',
-              style: Theme.of(context).textTheme.titleLarge),
+          Row(
+            children: [
+              Expanded(
+                child: Text('Suggested files',
+                    style: Theme.of(context).textTheme.titleLarge),
+              ),
+              if ((suggestions.asData?.value.isNotEmpty) ?? false)
+                TextButton(
+                  onPressed: repo.dismissAll,
+                  child: const Text('Dismiss all'),
+                ),
+            ],
+          ),
           const SizedBox(height: 12),
           suggestions.when(
             loading: () => const Padding(

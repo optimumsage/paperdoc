@@ -256,20 +256,52 @@ class SyncEngine {
     await _provider.download(metaRemote, metaTmp.path);
     final meta = DocMeta.fromJson(await metaTmp.readAsString());
 
-    final blob = _library.blobFile(relPath);
-    await blob.parent.create(recursive: true);
-    await _provider.download(blobRemote, blob.path);
+    // On-demand: new remote files arrive as cloud-only placeholders and are
+    // fetched on open / "keep offline". A document this device already keeps
+    // local stays local — its blob is refreshed to track the remote change.
+    final existing = await (_db.select(_db.documents)
+          ..where((t) => t.uid.equals(meta.uid)))
+        .getSingleOrNull();
+    final keepLocal = existing != null && existing.downloadState == 'local';
 
-    await _upsertDocument(meta, relPath);
+    if (keepLocal) {
+      final blob = _library.blobFile(relPath);
+      await blob.parent.create(recursive: true);
+      await _provider.download(blobRemote, blob.path);
+    }
+
+    await _upsertDocument(meta, relPath,
+        downloadState: keepLocal ? 'local' : 'cloud');
     await _upsertState(
       accountId,
       relPath: relPath,
-      // The on-disk hash equals the remote blob hash we just downloaded.
+      // The reconciler compares this against the remote blob hash; recording
+      // the remote hash (not a recomputed local one) keeps a cloud-only
+      // placeholder convergent so it isn't re-downloaded every sync.
       hash: blobRemote.hash ?? meta.contentHash,
       remoteId: blobRemote.id,
       remoteHash: blobRemote.hash,
     );
     report.downloaded++;
+  }
+
+  /// Fetches the blob for a cloud-only [doc] on demand (open / "keep offline"),
+  /// writing it to disk and flipping its download state to `local`. Throws if
+  /// the document has no recorded remote copy.
+  Future<void> downloadBlob(int accountId, Document doc) async {
+    final state = await _state(accountId, doc.relPath);
+    final remoteId = state?.remoteId;
+    if (remoteId == null) {
+      throw StateError('No remote copy to download for ${doc.relPath}');
+    }
+    final blob = _library.blobFile(doc.relPath);
+    await blob.parent.create(recursive: true);
+    await _provider.download(
+      RemoteFile(id: remoteId, relPath: doc.relPath, hash: state?.remoteHash),
+      blob.path,
+    );
+    await (_db.update(_db.documents)..where((t) => t.uid.equals(doc.uid)))
+        .write(const DocumentsCompanion(downloadState: Value('local')));
   }
 
   Future<void> _deleteLocal(
@@ -364,7 +396,11 @@ class SyncEngine {
     report.conflicts++;
   }
 
-  Future<void> _upsertDocument(DocMeta meta, String relPath) async {
+  Future<void> _upsertDocument(
+    DocMeta meta,
+    String relPath, {
+    String downloadState = 'local',
+  }) async {
     final now = _clock.nowMs();
     final existing = await (_db.select(_db.documents)
           ..where((t) => t.uid.equals(meta.uid)))
@@ -388,6 +424,7 @@ class SyncEngine {
               encHash: Value(meta.encHash),
               folderUid: Value(meta.folderUid),
               categoryUid: Value(meta.categoryUid),
+              downloadState: Value(downloadState),
             ),
           );
     } else {
@@ -401,6 +438,7 @@ class SyncEngine {
         encHash: Value(meta.encHash),
         folderUid: Value(meta.folderUid),
         categoryUid: Value(meta.categoryUid),
+        downloadState: Value(downloadState),
       ));
     }
 

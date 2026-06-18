@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../app/app_providers.dart';
+import '../../data/repositories/providers.dart';
 import '../duplicates/duplicates_page.dart';
 import '../security/encryption_settings.dart';
 import '../sync/drive_sync_settings.dart';
@@ -67,10 +68,16 @@ class SettingsPage extends ConsumerWidget {
           ),
           const Divider(),
           const _SectionHeader('About'),
-          const ListTile(
-            leading: Icon(Icons.info_outline),
-            title: Text('PaperDoc'),
-            subtitle: Text('v0.1.0 — offline document organizer'),
+          ListTile(
+            leading: const Icon(Icons.info_outline),
+            title: const Text('PaperDoc'),
+            subtitle: Text(
+              ref.watch(packageInfoProvider).maybeWhen(
+                    data: (info) =>
+                        'v${info.version} (${info.buildNumber}) — offline document organizer',
+                    orElse: () => 'offline document organizer',
+                  ),
+            ),
           ),
           const UpdateSettings(),
         ],

@@ -5,6 +5,7 @@ import '../../../core/format.dart';
 import '../../../core/platform_info.dart';
 import '../../../data/db/app_database.dart';
 import '../../document_detail/document_detail_sheet.dart';
+import '../../sync/sync_controller.dart';
 import '../doc_visuals.dart';
 import '../document_actions.dart';
 import '../selection_controller.dart';
@@ -18,6 +19,8 @@ enum _DocAction {
   extract,
   reveal,
   star,
+  keepOffline,
+  freeUpSpace,
   delete
 }
 
@@ -47,8 +50,29 @@ class DocumentTile extends ConsumerWidget {
         await revealDocument(ref, doc);
       case _DocAction.star:
         await toggleStar(ref, doc);
+      case _DocAction.keepOffline:
+        await keepOffline(context, ref, doc);
+      case _DocAction.freeUpSpace:
+        await freeUpSpace(context, ref, doc);
       case _DocAction.delete:
         await deleteDocument(context, ref, doc);
+    }
+  }
+
+  /// A small cloud/spinner badge for cloud-only or downloading documents.
+  Widget? _availabilityIndicator(ColorScheme scheme) {
+    switch (doc.downloadState) {
+      case 'cloud':
+        return Icon(Icons.cloud_outlined,
+            size: 16, color: scheme.onSurfaceVariant);
+      case 'downloading':
+        return const SizedBox(
+          width: 14,
+          height: 14,
+          child: CircularProgressIndicator(strokeWidth: 2),
+        );
+      default:
+        return null;
     }
   }
 
@@ -60,6 +84,7 @@ class DocumentTile extends ConsumerWidget {
 
   PopupMenuButton<_DocAction> _menuButton(
       BuildContext context, WidgetRef ref) {
+    final syncConnected = ref.watch(syncControllerProvider).connected;
     return PopupMenuButton<_DocAction>(
       tooltip: 'Actions',
       icon: const Icon(Icons.more_vert, size: 18),
@@ -82,6 +107,12 @@ class DocumentTile extends ConsumerWidget {
           value: _DocAction.star,
           child: Text(doc.starred ? 'Remove star' : 'Add star'),
         ),
+        if (doc.downloadState != 'local')
+          const PopupMenuItem(
+              value: _DocAction.keepOffline, child: Text('Keep offline')),
+        if (doc.downloadState == 'local' && syncConnected)
+          const PopupMenuItem(
+              value: _DocAction.freeUpSpace, child: Text('Free up space')),
         const PopupMenuDivider(),
         const PopupMenuItem(value: _DocAction.delete, child: Text('Delete')),
       ],
@@ -124,6 +155,11 @@ class DocumentTile extends ConsumerWidget {
           trailing: Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (_availabilityIndicator(scheme) case final indicator?)
+                Padding(
+                  padding: const EdgeInsets.only(right: 4),
+                  child: indicator,
+                ),
               if (doc.starred)
                 const Icon(Icons.star, size: 16, color: Color(0xFFE0A100)),
               if (!selectionActive) _menuButton(context, ref),
@@ -171,6 +207,8 @@ class DocumentTile extends ConsumerWidget {
                               size: 14, color: scheme.onPrimary),
                         ),
                       ),
+                    if (_availabilityIndicator(scheme) case final indicator?)
+                      Positioned(bottom: 6, right: 6, child: indicator),
                   ],
                 ),
               ),

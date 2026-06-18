@@ -76,6 +76,13 @@ class Documents extends Table with _SyncableColumns {
   TextColumn get ocrStatus => text().withDefault(const Constant('none'))();
   BoolColumn get starred => boolean().withDefault(const Constant(false))();
 
+  /// On-demand availability (OneDrive/Drive-style). `local` = the blob is on
+  /// disk and openable; `cloud` = a placeholder pulled in by sync, blob not yet
+  /// downloaded; `downloading` = a fetch is in flight. Documents imported on
+  /// this device default to `local`; only sync's download path creates `cloud`.
+  TextColumn get downloadState =>
+      text().withDefault(const Constant('local'))();
+
   IntColumn get importedAt => integer()();
   IntColumn get fileMtime => integer().nullable()();
   IntColumn get deletedAt => integer().nullable()();

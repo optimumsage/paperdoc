@@ -136,7 +136,10 @@ class SyncController extends Notifier<SyncUiState> {
     }
   }
 
-  Future<void> syncNow() async {
+  /// Builds a Drive-backed sync engine from stored credentials, or sets an
+  /// error and returns null when Drive isn't connected.
+  Future<({SyncEngine engine, SyncAccount account, GoogleDriveProvider provider})?>
+      _buildEngine() async {
     final account = await _account();
     final secrets = ref.read(secretStoreProvider);
     final clientId = await secrets.read(_kClientId);
@@ -147,24 +150,49 @@ class SyncController extends Notifier<SyncUiState> {
         clientSecret == null ||
         refreshToken == null) {
       state = state.copyWith(error: 'Connect Google Drive first.');
-      return;
+      return null;
     }
+    final session = GoogleAuthSession(
+      clientId: clientId,
+      clientSecret: clientSecret,
+      refreshToken: refreshToken,
+    );
+    final provider = GoogleDriveProvider(session, rootId: account.rootRemoteId);
+    final engine = SyncEngine(
+      ref.read(databaseProvider),
+      ref.read(libraryServiceProvider),
+      provider,
+      encryption: ref.read(libraryEncryptionProvider),
+    );
+    return (engine: engine, account: account, provider: provider);
+  }
+
+  /// Ensures [doc]'s blob is on disk, downloading it on demand when the
+  /// document is a cloud-only placeholder. Returns true when it's local after.
+  Future<bool> ensureLocal(Document doc) async {
+    if (doc.downloadState == 'local') return true;
+    final built = await _buildEngine();
+    if (built == null) return false;
+    final docs = ref.read(documentRepositoryProvider);
+    await docs.setDownloadState(doc.uid, 'downloading');
+    try {
+      await built.engine.downloadBlob(built.account.id, doc);
+      return true;
+    } catch (e) {
+      await docs.setDownloadState(doc.uid, 'cloud');
+      state = state.copyWith(error: 'Download failed: $e');
+      return false;
+    }
+  }
+
+  Future<void> syncNow() async {
+    final built = await _buildEngine();
+    if (built == null) return;
+    final account = built.account;
+    final provider = built.provider;
+    final engine = built.engine;
     state = state.copyWith(busy: true, error: null);
     try {
-      final session = GoogleAuthSession(
-        clientId: clientId,
-        clientSecret: clientSecret,
-        refreshToken: refreshToken,
-      );
-      final provider =
-          GoogleDriveProvider(session, rootId: account.rootRemoteId);
-      final engine = SyncEngine(
-        ref.read(databaseProvider),
-        ref.read(libraryServiceProvider),
-        provider,
-        encryption: ref.read(libraryEncryptionProvider),
-      );
-
       // Onboarding: if the cloud library is encrypted but this device has no
       // key, prompt for the master password before syncing (otherwise the
       // downloaded blobs would be undecryptable ciphertext).

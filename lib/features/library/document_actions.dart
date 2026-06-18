@@ -9,12 +9,53 @@ import 'package:path_provider/path_provider.dart';
 import '../../core/file_reveal.dart';
 import '../../data/db/app_database.dart';
 import '../../data/repositories/providers.dart';
+import '../sync/sync_controller.dart';
 import 'widgets/library_dialogs.dart';
+
+/// Ensures a (possibly cloud-only) document's blob is on disk, fetching it on
+/// demand. Returns the up-to-date document, or null if a needed download
+/// failed (the caller should abort the blob-reading action).
+Future<Document?> _ensureLocal(WidgetRef ref, Document doc) async {
+  if (doc.downloadState == 'local') return doc;
+  final ok = await ref.read(syncControllerProvider.notifier).ensureLocal(doc);
+  if (!ok) return null;
+  return ref.read(documentRepositoryProvider).findByUid(doc.uid);
+}
+
+/// Pins a cloud-only document for offline use (downloads it now), with feedback.
+Future<void> keepOffline(
+    BuildContext context, WidgetRef ref, Document doc) async {
+  final messenger = ScaffoldMessenger.of(context);
+  messenger.showSnackBar(
+      SnackBar(content: Text('Downloading "${doc.title}"…')));
+  final ready = await _ensureLocal(ref, doc);
+  messenger.hideCurrentSnackBar();
+  messenger.showSnackBar(SnackBar(
+    content: Text(ready != null
+        ? '"${doc.title}" is now available offline'
+        : 'Could not download "${doc.title}"'),
+  ));
+}
+
+/// Reverts a locally-cached document to cloud-only, freeing its disk space.
+Future<void> freeUpSpace(
+    BuildContext context, WidgetRef ref, Document doc) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final ok = await ref.read(documentRepositoryProvider).freeUpSpace(doc.uid);
+  messenger.showSnackBar(SnackBar(
+    content: Text(ok
+        ? '"${doc.title}" moved to the cloud — opens will re-download it'
+        : "\"${doc.title}\" isn't backed up to the cloud yet"),
+  ));
+}
 
 /// Opens a document with the OS default application. Encrypted documents are
 /// decrypted to a temporary plaintext file first (required to hand off to an
-/// external app).
+/// external app). Cloud-only documents are downloaded on demand first.
 Future<void> openDocument(WidgetRef ref, Document doc) async {
+  final ready = await _ensureLocal(ref, doc);
+  if (ready == null) return;
+  doc = ready;
   final library = ref.read(libraryServiceProvider);
   if (doc.isEncrypted) {
     final encryption = ref.read(libraryEncryptionProvider);
@@ -33,8 +74,10 @@ Future<void> openDocument(WidgetRef ref, Document doc) async {
 
 /// Reveals the document's stored file in the OS file manager (desktop).
 Future<void> revealDocument(WidgetRef ref, Document doc) async {
+  final ready = await _ensureLocal(ref, doc);
+  if (ready == null) return;
   final path =
-      await ref.read(libraryServiceProvider).blobAbsolutePath(doc.relPath);
+      await ref.read(libraryServiceProvider).blobAbsolutePath(ready.relPath);
   await revealInFileManager(path);
 }
 
@@ -67,8 +110,11 @@ Future<void> moveDocument(
   }
 }
 
-Future<void> duplicateDocument(WidgetRef ref, Document doc) =>
-    ref.read(documentRepositoryProvider).copyDocument(doc.uid);
+Future<void> duplicateDocument(WidgetRef ref, Document doc) async {
+  final ready = await _ensureLocal(ref, doc);
+  if (ready == null) return;
+  await ref.read(documentRepositoryProvider).copyDocument(ready.uid);
+}
 
 Future<void> toggleStar(WidgetRef ref, Document doc) =>
     ref.read(documentRepositoryProvider).setStarred(doc.uid, !doc.starred);
@@ -84,6 +130,15 @@ Future<void> extractArchive(
     );
     return;
   }
+
+  final ready = await _ensureLocal(ref, doc);
+  if (ready == null) {
+    messenger.showSnackBar(
+      const SnackBar(content: Text('Could not download the archive.')),
+    );
+    return;
+  }
+  doc = ready;
 
   final library = ref.read(libraryServiceProvider);
   final tmpRoot = await getTemporaryDirectory();

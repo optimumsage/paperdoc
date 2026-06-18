@@ -118,7 +118,16 @@ void main() {
     final docB = await b.repo.findByUid(docA.uid);
     expect(docB, isNotNull);
     expect(docB!.title, 'note');
-    expect(await b.library.blobFile(docB.relPath).readAsString(),
+    // On-demand: the pulled document arrives as a cloud-only placeholder — the
+    // metadata exists but the blob hasn't been downloaded yet.
+    expect(docB.downloadState, 'cloud');
+    expect(b.library.blobFile(docB.relPath).existsSync(), isFalse);
+
+    // Fetching on demand materializes the blob and flips it to local.
+    await b.engine.downloadBlob(b.accountId, docB);
+    final localB = await b.repo.findByUid(docA.uid);
+    expect(localB!.downloadState, 'local');
+    expect(await b.library.blobFile(localB.relPath).readAsString(),
         'shared content');
 
     await a.db.close();
@@ -158,6 +167,11 @@ void main() {
     // Both devices in sync at v0.
     await a.engine.sync(a.accountId);
     await b.engine.sync(b.accountId);
+
+    // B pulled v0 as a cloud placeholder; materialize it before editing
+    // locally (you can't edit a file that isn't downloaded).
+    final docB0 = await b.repo.findByUid(doc.uid);
+    await b.engine.downloadBlob(b.accountId, docB0!);
 
     // Each edits the same document differently.
     await editContent(a, doc.uid, 'A version');

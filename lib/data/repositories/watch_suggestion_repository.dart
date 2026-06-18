@@ -30,6 +30,12 @@ class WatchSuggestionRepository {
 
   Future<void> dismiss(int id) => _setStatus(id, 'dismissed');
 
+  /// Dismisses every currently-pending suggestion in one shot.
+  Future<void> dismissAll() =>
+      (_db.update(_db.watchSuggestions)
+            ..where((t) => t.status.equals('pending')))
+          .write(const WatchSuggestionsCompanion(status: Value('dismissed')));
+
   Future<void> _setStatus(int id, String status) =>
       (_db.update(_db.watchSuggestions)..where((t) => t.id.equals(id)))
           .write(WatchSuggestionsCompanion(status: Value(status)));

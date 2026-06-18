@@ -62,7 +62,9 @@ class OcrService {
         final next = await (_db.select(_db.documents)
               ..where((t) {
                 var cond = t.ocrStatus.equals(OcrStatus.pending) &
-                    t.deleted.equals(false);
+                    t.deleted.equals(false) &
+                    // Cloud-only placeholders have no local blob to OCR.
+                    t.downloadState.equals('local');
                 if (!_canDecrypt) cond = cond & t.isEncrypted.equals(false);
                 return cond;
               })

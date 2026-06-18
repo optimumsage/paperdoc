@@ -18,19 +18,44 @@ class DocumentArea extends ConsumerStatefulWidget {
   ConsumerState<DocumentArea> createState() => _DocumentAreaState();
 }
 
-class _DocumentAreaState extends ConsumerState<DocumentArea> {
+class _DocumentAreaState extends ConsumerState<DocumentArea>
+    with WidgetsBindingObserver {
   bool _dragging = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     // Process pending OCR, back-fill text extraction for older imports, and
-    // scan watch folders when the library opens.
+    // scan watch folders when the library opens. Then start live filesystem
+    // watchers so new files are picked up without a manual scan.
     unawaited(Future.microtask(() async {
       await ref.read(ocrServiceProvider).processPending();
       await ref.read(documentRepositoryProvider).reextractMissing();
-      await ref.read(watchServiceProvider).scanAll();
+      final watch = ref.read(watchServiceProvider);
+      await watch.scanAll();
+      await watch.startWatching();
     }));
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    unawaited(ref.read(watchServiceProvider).stopWatching());
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    // Re-scan and re-arm watchers when returning to the foreground (live
+    // watchers don't fire for changes made while the app was backgrounded).
+    if (state == AppLifecycleState.resumed) {
+      unawaited(Future.microtask(() async {
+        final watch = ref.read(watchServiceProvider);
+        await watch.scanAll();
+        await watch.startWatching();
+      }));
+    }
   }
 
   String? get _importFolder =>
@@ -75,6 +100,12 @@ class _DocumentAreaState extends ConsumerState<DocumentArea> {
     final docsAsync = ref.watch(visibleDocumentsProvider);
     final viewMode = ref.watch(documentViewModeProvider);
     final scheme = Theme.of(context).colorScheme;
+
+    // Re-arm live watchers whenever the configured watch folders change.
+    ref.listen(watchDirsProvider, (prev, next) {
+      final watch = ref.read(watchServiceProvider);
+      unawaited(watch.scanAll().then((_) => watch.startWatching()));
+    });
 
     return DropTarget(
       onDragEntered: (_) => setState(() => _dragging = true),

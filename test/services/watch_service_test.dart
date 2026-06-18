@@ -1,5 +1,6 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:paperdoc/data/db/app_database.dart';
@@ -51,6 +52,25 @@ void main() {
     // Re-scan: nothing new.
     expect(await watch.scanDir(dir), 0);
     expect(await pendingCount(), 3);
+  });
+
+  test('a deleted then re-added same-named file is detected again', () async {
+    final f = File(p.join(watched.path, 'invoice.pdf'));
+    await f.writeAsString('first');
+
+    final dir = await dirs.add(path: watched.path);
+    expect(await watch.scanDir(dir), 1);
+
+    // User dismisses it, then deletes the file from disk.
+    await (db.update(db.watchSuggestions)
+          ..where((t) => t.srcPath.equals(f.path)))
+        .write(const WatchSuggestionsCompanion(status: Value('dismissed')));
+    await f.delete();
+
+    // A new file with the same name appears — the stale row must not block it.
+    await File(p.join(watched.path, 'invoice.pdf')).writeAsString('second');
+    expect(await watch.scanDir(dir), 1);
+    expect(await pendingCount(), 1);
   });
 
   test('files already in the library are not suggested', () async {

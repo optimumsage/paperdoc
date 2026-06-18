@@ -43,9 +43,9 @@ class AppDatabase extends _$AppDatabase {
   AppDatabase([QueryExecutor? executor]) : super(executor ?? _openConnection());
 
   /// v1: settings (M0). v2: catalog (M1). v3: FTS (M2). v4: sync (M5).
-  /// v5: watch dirs (M7).
+  /// v5: watch dirs (M7). v6: on-demand download state.
   @override
-  int get schemaVersion => 5;
+  int get schemaVersion => 6;
 
   @override
   MigrationStrategy get migration => MigrationStrategy(
@@ -81,6 +81,11 @@ class AppDatabase extends _$AppDatabase {
             // Watch directories introduced in M7.
             await m.createTable(watchDirs);
             await m.createTable(watchSuggestions);
+          }
+          if (from < 6) {
+            // On-demand download state. Existing rows default to 'local' so
+            // every blob already on disk stays available.
+            await m.addColumn(documents, documents.downloadState);
           }
         },
         beforeOpen: (details) async {

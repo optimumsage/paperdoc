@@ -137,6 +137,8 @@ class DocumentRepository {
           ..where((t) =>
               t.deleted.equals(false) &
               t.isEncrypted.equals(false) &
+              // Cloud-only placeholders have no blob on disk to extract from.
+              t.downloadState.equals('local') &
               t.docType.isIn([DocType.pdf, DocType.office, DocType.text])))
         .get();
     var indexed = 0;
@@ -300,6 +302,29 @@ class DocumentRepository {
           revision: Value(cur.revision + 1),
         ),
       );
+
+  /// Sets a document's on-demand availability. This is a per-device field and
+  /// deliberately does NOT bump `updatedAt`/`revision` — it must never trigger
+  /// a sync upload.
+  Future<void> setDownloadState(String uid, String state) =>
+      (_db.update(_db.documents)..where((t) => t.uid.equals(uid)))
+          .write(DocumentsCompanion(downloadState: Value(state)));
+
+  /// Reverts a locally-cached document to a cloud-only placeholder, deleting
+  /// its on-disk blob to free space. Returns false (and does nothing) unless the
+  /// document is backed by a remote copy — we never delete the only copy.
+  Future<bool> freeUpSpace(String uid) async {
+    final doc = await findByUid(uid);
+    if (doc == null || doc.downloadState != 'local') return false;
+    final backed = await (_db.select(_db.syncState)
+          ..where((t) =>
+              t.relPath.equals(doc.relPath) & t.remoteId.isNotNull()))
+        .getSingleOrNull();
+    if (backed == null) return false;
+    await _library.deleteBlob(doc.relPath);
+    await setDownloadState(uid, 'cloud');
+    return true;
+  }
 
   /// Duplicates a document: copies the blob to a fresh uid and inserts a new
   /// catalog row in the same folder.
