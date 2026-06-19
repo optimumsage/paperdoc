@@ -84,14 +84,30 @@ class AppDatabase extends _$AppDatabase {
           }
           if (from < 6) {
             // On-demand download state. Existing rows default to 'local' so
-            // every blob already on disk stays available.
-            await m.addColumn(documents, documents.downloadState);
+            // every blob already on disk stays available. Guard against the
+            // column already existing: some early databases ended up at
+            // user_version 5 with this column present (schema/version overlap
+            // during the v0.1→v0.2 transition), and a bare ADD COLUMN there
+            // throws "duplicate column", bricking startup.
+            if (!await _columnExists('documents', 'download_state')) {
+              await m.addColumn(documents, documents.downloadState);
+            }
           }
         },
         beforeOpen: (details) async {
           await customStatement('PRAGMA foreign_keys = ON');
         },
       );
+
+  /// Whether [column] already exists on [table]. Used to make additive
+  /// migrations idempotent against databases left in an inconsistent state.
+  Future<bool> _columnExists(String table, String column) async {
+    final rows = await customSelect(
+      'SELECT 1 FROM pragma_table_info(?) WHERE name = ?',
+      variables: [Variable.withString(table), Variable.withString(column)],
+    ).get();
+    return rows.isNotEmpty;
+  }
 
   /// The FTS5 virtual table is created with raw SQL (drift has no table class
   /// for FTS5). Maintained by the search indexer; `uid` is stored but not
