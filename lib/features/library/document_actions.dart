@@ -22,6 +22,20 @@ Future<Document?> _ensureLocal(WidgetRef ref, Document doc) async {
   return ref.read(documentRepositoryProvider).findByUid(doc.uid);
 }
 
+/// Returns a document's plaintext bytes — downloading a cloud-only blob on
+/// demand and decrypting an encrypted one. Null if a needed download failed.
+Future<List<int>?> readDocumentBytes(WidgetRef ref, Document doc) async {
+  final ready = await _ensureLocal(ref, doc);
+  if (ready == null) return null;
+  doc = ready;
+  final library = ref.read(libraryServiceProvider);
+  if (doc.isEncrypted) {
+    final cipher = await library.blobFile(doc.relPath).readAsBytes();
+    return ref.read(libraryEncryptionProvider).decrypt(cipher);
+  }
+  return library.blobFile(doc.relPath).readAsBytes();
+}
+
 /// Pins a cloud-only document for offline use (downloads it now), with feedback.
 Future<void> keepOffline(
     BuildContext context, WidgetRef ref, Document doc) async {

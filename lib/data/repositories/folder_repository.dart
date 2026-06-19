@@ -43,6 +43,26 @@ class FolderRepository {
       (_db.select(_db.folders)..where((t) => t.uid.equals(uid)))
           .getSingleOrNull();
 
+  /// Returns [uid] together with every descendant folder uid (the whole
+  /// subtree). Used for folder-wide operations like "keep folder offline".
+  Future<List<String>> descendantUids(String uid) async {
+    final all = await watchAll().first;
+    final byParent = <String?, List<String>>{};
+    for (final f in all) {
+      byParent.putIfAbsent(f.parentUid, () => []).add(f.uid);
+    }
+    final result = <String>[uid];
+    final queue = <String>[uid];
+    while (queue.isNotEmpty) {
+      final current = queue.removeLast();
+      for (final child in byParent[current] ?? const []) {
+        result.add(child);
+        queue.add(child);
+      }
+    }
+    return result;
+  }
+
   Future<Folder> create({
     required String name,
     String? parentUid,

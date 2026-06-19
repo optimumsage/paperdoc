@@ -65,4 +65,37 @@ void main() {
     expect((await folders.findByUid(leaf.uid))!.parentUid, root.uid);
     expect((await docs.findByUid(doc.uid))!.folderUid, root.uid);
   });
+
+  test('descendantUids returns the whole subtree including the root', () async {
+    final root = await folders.create(name: 'Root');
+    final mid = await folders.create(name: 'Mid', parentUid: root.uid);
+    final leaf = await folders.create(name: 'Leaf', parentUid: mid.uid);
+    final sibling = await folders.create(name: 'Sibling'); // unrelated
+
+    final subtree = await folders.descendantUids(root.uid);
+    expect(subtree.toSet(), {root.uid, mid.uid, leaf.uid});
+    expect(subtree, isNot(contains(sibling.uid)));
+
+    // A leaf folder is just itself.
+    expect(await folders.descendantUids(leaf.uid), [leaf.uid]);
+  });
+
+  test('documentsInFolders gathers docs across the given folders', () async {
+    final a = await folders.create(name: 'A');
+    final b = await folders.create(name: 'B', parentUid: a.uid);
+
+    final f1 = File(p.join(tmp.path, 'a.txt'))..writeAsStringSync('a');
+    final f2 = File(p.join(tmp.path, 'b.txt'))..writeAsStringSync('b');
+    final f3 = File(p.join(tmp.path, 'c.txt'))..writeAsStringSync('c');
+    final docA = await docs.importFile(f1.path, folderUid: a.uid);
+    final docB = await docs.importFile(f2.path, folderUid: b.uid);
+    await docs.importFile(f3.path); // unfiled
+
+    final subtree = await folders.descendantUids(a.uid);
+    final found = await docs.documentsInFolders(subtree);
+    expect(found.map((d) => d.uid).toSet(), {docA.uid, docB.uid});
+
+    // Empty input is a no-op.
+    expect(await docs.documentsInFolders(const []), isEmpty);
+  });
 }

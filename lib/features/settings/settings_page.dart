@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../app/app_providers.dart';
 import '../../data/repositories/providers.dart';
 import '../duplicates/duplicates_page.dart';
+import '../library/manage_tags_dialog.dart';
 import '../security/encryption_settings.dart';
 import '../sync/drive_sync_settings.dart';
 import '../update/update_settings.dart';
@@ -55,6 +56,13 @@ class SettingsPage extends ConsumerWidget {
           const DriveSyncSettings(),
           const Divider(),
           const _SectionHeader('Tools'),
+          ListTile(
+            leading: const Icon(Icons.label_outline),
+            title: const Text('Manage tags'),
+            subtitle: const Text('Rename or delete tags'),
+            trailing: const Icon(Icons.chevron_right),
+            onTap: () => showManageTagsDialog(context),
+          ),
           ListTile(
             leading: const Icon(Icons.content_copy_outlined),
             title: const Text('Find duplicates'),

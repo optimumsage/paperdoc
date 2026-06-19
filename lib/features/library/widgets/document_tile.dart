@@ -8,6 +8,7 @@ import '../../document_detail/document_detail_sheet.dart';
 import '../../sync/sync_controller.dart';
 import '../doc_visuals.dart';
 import '../document_actions.dart';
+import '../export_actions.dart';
 import '../selection_controller.dart';
 
 enum _DocAction {
@@ -16,6 +17,7 @@ enum _DocAction {
   rename,
   move,
   duplicate,
+  download,
   extract,
   reveal,
   star,
@@ -44,6 +46,8 @@ class DocumentTile extends ConsumerWidget {
         await moveDocument(context, ref, doc);
       case _DocAction.duplicate:
         await duplicateDocument(ref, doc);
+      case _DocAction.download:
+        await exportDocument(context, ref, doc);
       case _DocAction.extract:
         await extractArchive(context, ref, doc);
       case _DocAction.reveal:
@@ -82,41 +86,67 @@ class DocumentTile extends ConsumerWidget {
     return ext.isEmpty ? size : '$ext · $size';
   }
 
+  /// The action menu, shared between the overflow button and the right-click /
+  /// long-press context menu.
+  List<PopupMenuEntry<_DocAction>> _menuItems(WidgetRef ref) {
+    final syncConnected = ref.watch(syncControllerProvider).connected;
+    return [
+      const PopupMenuItem(value: _DocAction.open, child: Text('Open')),
+      const PopupMenuItem(value: _DocAction.details, child: Text('Details…')),
+      const PopupMenuItem(value: _DocAction.rename, child: Text('Rename')),
+      const PopupMenuItem(value: _DocAction.move, child: Text('Move to…')),
+      const PopupMenuItem(
+          value: _DocAction.duplicate, child: Text('Duplicate')),
+      const PopupMenuItem(
+          value: _DocAction.download, child: Text('Download a copy…')),
+      if (doc.docType == 'archive')
+        const PopupMenuItem(
+            value: _DocAction.extract, child: Text('Extract archive')),
+      if (PlatformInfo.isDesktop)
+        const PopupMenuItem(
+            value: _DocAction.reveal, child: Text('Reveal in file manager')),
+      PopupMenuItem(
+        value: _DocAction.star,
+        child: Text(doc.starred ? 'Remove star' : 'Add star'),
+      ),
+      if (doc.downloadState != 'local')
+        const PopupMenuItem(
+            value: _DocAction.keepOffline, child: Text('Keep offline')),
+      if (doc.downloadState == 'local' && syncConnected)
+        const PopupMenuItem(
+            value: _DocAction.freeUpSpace, child: Text('Free up space')),
+      const PopupMenuDivider(),
+      const PopupMenuItem(value: _DocAction.delete, child: Text('Delete')),
+    ];
+  }
+
   PopupMenuButton<_DocAction> _menuButton(
       BuildContext context, WidgetRef ref) {
-    final syncConnected = ref.watch(syncControllerProvider).connected;
     return PopupMenuButton<_DocAction>(
       tooltip: 'Actions',
       icon: const Icon(Icons.more_vert, size: 18),
       onSelected: (a) => _run(a, context, ref),
-      itemBuilder: (context) => [
-        const PopupMenuItem(value: _DocAction.open, child: Text('Open')),
-        const PopupMenuItem(
-            value: _DocAction.details, child: Text('Details…')),
-        const PopupMenuItem(value: _DocAction.rename, child: Text('Rename')),
-        const PopupMenuItem(value: _DocAction.move, child: Text('Move to…')),
-        const PopupMenuItem(
-            value: _DocAction.duplicate, child: Text('Duplicate')),
-        if (doc.docType == 'archive')
-          const PopupMenuItem(
-              value: _DocAction.extract, child: Text('Extract archive')),
-        if (PlatformInfo.isDesktop)
-          const PopupMenuItem(
-              value: _DocAction.reveal, child: Text('Reveal in file manager')),
-        PopupMenuItem(
-          value: _DocAction.star,
-          child: Text(doc.starred ? 'Remove star' : 'Add star'),
-        ),
-        if (doc.downloadState != 'local')
-          const PopupMenuItem(
-              value: _DocAction.keepOffline, child: Text('Keep offline')),
-        if (doc.downloadState == 'local' && syncConnected)
-          const PopupMenuItem(
-              value: _DocAction.freeUpSpace, child: Text('Free up space')),
-        const PopupMenuDivider(),
-        const PopupMenuItem(value: _DocAction.delete, child: Text('Delete')),
-      ],
+      itemBuilder: (context) => _menuItems(ref),
     );
+  }
+
+  /// Opens the action menu at [position] (used for desktop right-click and
+  /// mobile long-press, since tap is reserved for selection).
+  Future<void> _showContextMenu(
+      BuildContext context, WidgetRef ref, Offset position) async {
+    final overlay =
+        Overlay.of(context).context.findRenderObject() as RenderBox;
+    final action = await showMenu<_DocAction>(
+      context: context,
+      position: RelativeRect.fromRect(
+        position & const Size(40, 40),
+        Offset.zero & overlay.size,
+      ),
+      items: _menuItems(ref),
+    );
+    if (action != null && context.mounted) {
+      await _run(action, context, ref);
+    }
   }
 
   @override
@@ -126,21 +156,31 @@ class DocumentTile extends ConsumerWidget {
     final icon = docTypeIcon(doc.docType);
 
     final selection = ref.watch(selectionProvider);
-    final selectionActive = selection.isNotEmpty;
     final selected = selection.contains(doc.uid);
     final selectionNotifier = ref.read(selectionProvider.notifier);
-    void onTap() => selectionActive
-        ? selectionNotifier.toggle(doc.uid)
-        : _run(_DocAction.open, context, ref);
-    void onLongPress() => selectionNotifier.toggle(doc.uid);
+
+    // Single tap selects (and toggles), double tap opens, and the action menu
+    // is reached via right-click (desktop) or long-press (mobile). The InkWell
+    // must stay inside the Card so it has a Material ancestor for its ripple.
+    Widget gestures(Widget child) => GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onSecondaryTapDown: PlatformInfo.isDesktop
+              ? (d) => _showContextMenu(context, ref, d.globalPosition)
+              : null,
+          onLongPressStart: (d) =>
+              _showContextMenu(context, ref, d.globalPosition),
+          child: InkWell(
+            onTap: () => selectionNotifier.toggle(doc.uid),
+            onDoubleTap: () => _run(_DocAction.open, context, ref),
+            child: child,
+          ),
+        );
 
     if (!grid) {
       return Card(
         margin: const EdgeInsets.symmetric(vertical: 4),
         color: selected ? scheme.secondaryContainer : null,
-        child: ListTile(
-          onTap: onTap,
-          onLongPress: onLongPress,
+        child: gestures(ListTile(
           leading: selected
               ? CircleAvatar(
                   backgroundColor: scheme.primary,
@@ -162,10 +202,10 @@ class DocumentTile extends ConsumerWidget {
                 ),
               if (doc.starred)
                 const Icon(Icons.star, size: 16, color: Color(0xFFE0A100)),
-              if (!selectionActive) _menuButton(context, ref),
+              _menuButton(context, ref),
             ],
           ),
-        ),
+        )),
       );
     }
 
@@ -176,10 +216,8 @@ class DocumentTile extends ConsumerWidget {
               side: BorderSide(color: scheme.primary, width: 2),
             )
           : null,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Column(
+      child: gestures(
+        Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Expanded(
@@ -240,7 +278,7 @@ class DocumentTile extends ConsumerWidget {
                       ],
                     ),
                   ),
-                  if (!selectionActive) _menuButton(context, ref),
+                  _menuButton(context, ref),
                 ],
               ),
             ),

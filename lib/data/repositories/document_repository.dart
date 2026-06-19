@@ -116,6 +116,16 @@ class DocumentRepository {
       (_db.select(_db.documents)..where((t) => t.uid.equals(uid)))
           .getSingleOrNull();
 
+  /// All non-deleted documents that live directly in any of [folderUids].
+  /// Combine with [FolderRepository.descendantUids] for folder-wide operations.
+  Future<List<Document>> documentsInFolders(Iterable<String> folderUids) {
+    final ids = folderUids.toList();
+    if (ids.isEmpty) return Future.value(const []);
+    return (_db.select(_db.documents)
+          ..where((t) => t.deleted.equals(false) & t.folderUid.isIn(ids)))
+        .get();
+  }
+
   /// Live groups of exact-duplicate documents (same content hash).
   Stream<List<List<Document>>> watchDuplicates() =>
       watchAll().map(groupDuplicates);

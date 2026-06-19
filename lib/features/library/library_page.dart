@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../data/db/app_database.dart';
 import '../../data/repositories/document_repository.dart';
 import '../../data/repositories/providers.dart';
 import '../security/library_lock_controller.dart';
 import '../security/lock_screen.dart';
 import '../sync/sync_controller.dart';
 import '../watch/watch_inbox.dart';
+import 'export_actions.dart';
 import 'import_actions.dart';
 import 'library_controller.dart';
 import 'library_setup_view.dart';
@@ -95,6 +97,19 @@ class _LibraryBrowser extends ConsumerWidget {
     }
   }
 
+  Future<void> _bulkDownload(BuildContext context, WidgetRef ref) async {
+    final uids = ref.read(selectionProvider).toList();
+    final repo = ref.read(documentRepositoryProvider);
+    final docs = <Document>[];
+    for (final uid in uids) {
+      final doc = await repo.findByUid(uid);
+      if (doc != null) docs.add(doc);
+    }
+    if (!context.mounted || docs.isEmpty) return;
+    await exportDocuments(context, ref, docs);
+    ref.read(selectionProvider.notifier).clear();
+  }
+
   Future<void> _bulkStar(WidgetRef ref) async {
     final uids = ref.read(selectionProvider).toList();
     await ref.read(documentRepositoryProvider).bulkSetStarred(uids, true);
@@ -111,6 +126,11 @@ class _LibraryBrowser extends ConsumerWidget {
       ),
       title: Text('$count selected'),
       actions: [
+        IconButton(
+          tooltip: 'Download a copy',
+          icon: const Icon(Icons.download_outlined),
+          onPressed: () => _bulkDownload(context, ref),
+        ),
         IconButton(
           tooltip: 'Star',
           icon: const Icon(Icons.star_border),

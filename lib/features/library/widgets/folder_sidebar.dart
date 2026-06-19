@@ -3,6 +3,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import '../../../data/db/app_database.dart';
 import '../../../data/repositories/providers.dart';
+import '../../sync/sync_controller.dart';
+import '../folder_offline_actions.dart';
 import '../library_controller.dart';
 import 'library_dialogs.dart';
 
@@ -107,20 +109,44 @@ class FolderSidebar extends ConsumerWidget {
                       trailing: PopupMenuButton<String>(
                         icon: const Icon(Icons.more_horiz, size: 18),
                         onSelected: (v) async {
-                          if (v == 'rename') {
-                            await _renameFolder(context, ref, folder);
-                          } else if (v == 'delete') {
-                            await ref
-                                .read(folderRepositoryProvider)
-                                .softDelete(folder.uid);
+                          switch (v) {
+                            case 'rename':
+                              await _renameFolder(context, ref, folder);
+                            case 'keepOffline':
+                              if (context.mounted) {
+                                await keepFolderOffline(
+                                    context, ref, folder.uid);
+                              }
+                            case 'freeUpSpace':
+                              if (context.mounted) {
+                                await freeFolderSpace(
+                                    context, ref, folder.uid);
+                              }
+                            case 'delete':
+                              await ref
+                                  .read(folderRepositoryProvider)
+                                  .softDelete(folder.uid);
                           }
                         },
-                        itemBuilder: (context) => const [
-                          PopupMenuItem(
-                              value: 'rename', child: Text('Rename')),
-                          PopupMenuItem(
-                              value: 'delete', child: Text('Delete')),
-                        ],
+                        itemBuilder: (context) {
+                          final syncOn =
+                              ref.watch(syncControllerProvider).connected;
+                          return [
+                            const PopupMenuItem(
+                                value: 'rename', child: Text('Rename')),
+                            if (syncOn) ...[
+                              const PopupMenuItem(
+                                  value: 'keepOffline',
+                                  child: Text('Keep folder offline')),
+                              const PopupMenuItem(
+                                  value: 'freeUpSpace',
+                                  child: Text('Free up space')),
+                            ],
+                            const PopupMenuDivider(),
+                            const PopupMenuItem(
+                                value: 'delete', child: Text('Delete')),
+                          ];
+                        },
                       ),
                     ),
                 ],
